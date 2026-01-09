@@ -5,7 +5,7 @@ const std::unordered_map<std::string, FunctionType> function_type_map = {{"Seria
                                                                          {"CodeGeneration", FunctionType::CODEGEN}};
 
 RetargetOptimization::RetargetOptimization(std::string casadi_function_path, const rclcpp::Logger& logger)
-    : m_logger(m_logger) {
+  : m_logger(logger) {
   // load example io data from json
   json retarget_config;
   std::filesystem::path config_path(casadi_function_path);
@@ -115,7 +115,7 @@ RetargetOptimization::RetargetOptimization(std::string casadi_function_path, con
 RetargetOptimization::~RetargetOptimization() {}
 
 casadi::DMDict RetargetOptimization::solve_function(casadi::Function& opti_function, casadi::DM& q0,
-                                                    casadi::DMDict& params) {
+                                                    const casadi::DMDict& params) {
   casadi::DMDict casadi_params;
   casadi::DMDict result;
   for (size_t in_idx = 0; in_idx < opti_function.n_in(); in_idx++) {
@@ -130,14 +130,16 @@ casadi::DMDict RetargetOptimization::solve_function(casadi::Function& opti_funct
       continue;
     }
 
-    if (params.find(input_name) == params.end()) {
-      if (m_default_weights.find(input_name) == m_default_weights.end())
-        throw std::runtime_error("Key not found in params: " + input_name);
-
-      params[input_name] = m_default_weights[input_name];
+    auto params_it = params.find(input_name);
+    if (params_it == params.end()) {
+      auto default_it = m_default_weights.find(input_name);
+      if (default_it == m_default_weights.end()) {
+        throw std::runtime_error("Key not found in params/default_weights: " + input_name);
+      }
+      casadi_params[input_name] = default_it->second;
+    } else {
+      casadi_params[input_name] = params_it->second;
     }
-
-    casadi_params[input_name] = params[input_name];
 
     // std::cout << input_name << ": " << casadi_params[input_name] << std::endl;
     // std::cout << "func size "<< input_shape1<< ", "<< input_shape2 <<" params "<<
@@ -151,15 +153,16 @@ casadi::DMDict RetargetOptimization::solve_function(casadi::Function& opti_funct
 
 void RetargetOptimization::solve(RetargetParams params, std::vector<casadi::DM> q0_list, float dt, float vel_percent) {
   casadi::DMDict extended_result;
-  // walk through the map and add the parameters to the casadi_params
-  params["dt"] = casadi::DM(dt);
-  params["dq_vel_limit_factor"] = casadi::DM(vel_percent);
+  // Build a local, immutable params dict for the solver call(s)
+  RetargetParams base_params = params;
+  base_params["dt"] = casadi::DM(dt);
+  base_params["dq_vel_limit_factor"] = casadi::DM(vel_percent);
 
   std::vector<std::future<casadi::DMDict>> results_future_list;
   if (m_opti_functions_list.size() > 1) {
     for (size_t i = 0; i < m_opti_functions_list.size(); i++) {
       results_future_list.emplace_back(m_thread_pool->enqueue(
-          [this, i, &q0_list, &params] { return solve_function(m_opti_functions_list[i], q0_list[i], params); }));
+          [this, i, &q0_list, base_params] { return solve_function(m_opti_functions_list[i], q0_list[i], base_params); }));
     }
 
     {
@@ -189,7 +192,7 @@ void RetargetOptimization::solve(RetargetParams params, std::vector<casadi::DM> 
       m_post_process_function.call(full_result, extended_result, true);
     }
   } else {
-    m_result_list[0] = solve_function(m_opti_functions_list[0], q0_list[0], params);
+    m_result_list[0] = solve_function(m_opti_functions_list[0], q0_list[0], base_params);
     m_last_q_list[0] = m_result_list[0].at("q");
     m_last_v_list[0] = m_result_list[0].at("v");
 

@@ -34,7 +34,7 @@ class RetargetOptimization {
   casadi::DMDict getDefaultWeights() { return m_default_weights; }
 
  private:
-  casadi::DMDict solve_function(casadi::Function &opti_function, casadi::DM &q0, casadi::DMDict &params);
+    casadi::DMDict solve_function(casadi::Function &opti_function, casadi::DM &q0, const casadi::DMDict &params);
 
   std::vector<casadi::Function> m_opti_functions_list;
   std::vector<casadi::Function> m_update_result_functions_list;
