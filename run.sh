@@ -18,7 +18,7 @@ ADAM_TYPE="${1:-adam_sp}"
 MOCAP_DRIVER="${2:-noitom}"
 
 # Valid options
-VALID_ADAM_TYPES=("adam_sp" "adam_u" "adam_pro")
+VALID_ADAM_TYPES=("adam_sp" "adam_u" "adam_pro" "primeu")
 VALID_MOCAP_DRIVERS=("noitom" "zerolab")
 
 # Function to print colored output
@@ -93,6 +93,9 @@ check_ros_environment() {
 # Function to get launch command
 get_launch_command() {
     case "${ADAM_TYPE}_${MOCAP_DRIVER}" in
+        "primeu_noitom")
+            echo "ros2 launch bringup retarget_primeu.launch.py"
+            ;;
         "adam_sp_noitom")
             echo "ros2 launch bringup retarget_adam_sp.launch.py"
             ;;
@@ -108,6 +111,7 @@ get_launch_command() {
         *)
             print_error "Unsupported combination: ${ADAM_TYPE} + ${MOCAP_DRIVER}"
             print_warning "Currently supported combinations:"
+            print_warning "  primeu + noitom"
             print_warning "  adam_sp + noitom"
             print_warning "  adam_u + noitom"
             print_warning "  adam_pro + noitom"
