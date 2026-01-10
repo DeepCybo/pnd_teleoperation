@@ -25,6 +25,11 @@ class DataHandler {
   DataHandler(DataHandler const&) = delete;
   DataHandler& operator=(DataHandler const&) = delete;
 
+  void set_root_frame(std::string root_frame) { root_frame_ = std::move(root_frame); }
+  void set_child_prefix(std::string child_prefix) { child_prefix_ = std::move(child_prefix); }
+  const std::string& root_frame() const { return root_frame_; }
+  const std::string& child_prefix() const { return child_prefix_; }
+
   void init();
   bool exit_flag() { return exit_flag_; }
   void reg_handle(NoitomMocapPubCb func) { handle_func_ = func; }
@@ -49,6 +54,10 @@ class DataHandler {
 
  private:
   DataHandler() = default;
+
+ private:
+  std::string root_frame_ = "world";
+  std::string child_prefix_;
 
  private:
   std::thread* thread_;

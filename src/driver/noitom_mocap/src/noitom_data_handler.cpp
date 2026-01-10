@@ -36,8 +36,9 @@ void printJointPosture(MCPJointHandle_t jointHandle) {
   uint32_t unSizeOfJointHandle = 0;
   VERIFY(mcpJoint->GetJointChild(nullptr, &unSizeOfJointHandle, jointHandle));
 
-  if (DataHandler::getInstance().joint_index_.find(szJointName) != DataHandler::getInstance().joint_index_.end()) {
-    int idx = DataHandler::getInstance().joint_index_[szJointName];
+  const std::string key = DataHandler::getInstance().child_prefix() + std::string(szJointName);
+  if (DataHandler::getInstance().joint_index_.find(key) != DataHandler::getInstance().joint_index_.end()) {
+    int idx = DataHandler::getInstance().joint_index_[key];
     DataHandler::getInstance().data_[idx].transform.translation.x = px / 100.0;
     DataHandler::getInstance().data_[idx].transform.translation.y = py / 100.0;
     DataHandler::getInstance().data_[idx].transform.translation.z = pz / 100.0;
@@ -201,7 +202,7 @@ void DataHandler::init() {
                                          "LeftHandPinky3"};
 
   geometry_msgs::msg::TransformStamped transform_stamped;
-  transform_stamped.header.frame_id = "world";
+  transform_stamped.header.frame_id = DataHandler::getInstance().root_frame();
   transform_stamped.transform.translation.x = 0;
   transform_stamped.transform.translation.y = 0;
   transform_stamped.transform.translation.z = 0;
@@ -211,10 +212,10 @@ void DataHandler::init() {
   transform_stamped.transform.rotation.w = 1;
   int i = 0;
   for (auto& name : body_names) {
-    transform_stamped.child_frame_id = name;
+    transform_stamped.child_frame_id = DataHandler::getInstance().child_prefix() + name;
     data_.push_back(transform_stamped);
 
-    joint_index_.insert({name, i});
+    joint_index_.insert({transform_stamped.child_frame_id, i});
     i++;
   }
   thread_ = new std::thread(run);

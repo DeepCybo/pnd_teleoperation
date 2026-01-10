@@ -33,12 +33,14 @@ class AdamRetarget : public rclcpp::Node {
   AdamRetarget() : Node("adam_retarget") {
     // Declare and acquire `target_frame` parameter
     base_frame = this->declare_parameter<std::string>("base_frame", "world");
+    bone_frame_prefix = this->declare_parameter<std::string>("bone_frame_prefix", "");
     control_loop_rate = this->declare_parameter<double>("control_loop_rate", 100);
     config_json_path = this->declare_parameter<std::string>("config_json_path", "config.json");
     warm_start_trig_timeout = this->declare_parameter<double>("warm_start_trig_timeout", 0.5);      // seconds
     warm_start_duration = this->declare_parameter<double>("warm_start_duration", 5.0);              // seconds
     warm_start_slowdown_ratio = this->declare_parameter<double>("warm_start_slowdown_ratio", 0.1);  // seconds
     RCLCPP_INFO(this->get_logger(), "Base frame: %s", base_frame.c_str());
+    RCLCPP_INFO(this->get_logger(), "Bone frame prefix: %s", bone_frame_prefix.c_str());
     RCLCPP_INFO(this->get_logger(), "Control loop rate: %f", control_loop_rate);
     RCLCPP_INFO(this->get_logger(), "Config json path: %s", config_json_path.c_str());
     RCLCPP_INFO(this->get_logger(), "Warm start duration: %f", warm_start_duration);
@@ -204,16 +206,17 @@ class AdamRetarget : public rclcpp::Node {
     std::vector<std::string> missing_bone_names;
     // walk through all the frames and get the transform
     for (auto &frame : needed_bone_names) {
+      const std::string tf_frame = bone_frame_prefix + frame;
       // check if the transform is available
       std::string cant_transform_err;
-      if (!tf_buffer_->canTransform(this->base_frame, frame, tf2::TimePointZero, &cant_transform_err)) {
+      if (!tf_buffer_->canTransform(this->base_frame, tf_frame, tf2::TimePointZero, &cant_transform_err)) {
         missing_bone_names.push_back(frame);
         continue;
         ;
       }
 
       try {
-        auto transform_msg = tf_buffer_->lookupTransform(this->base_frame, frame, tf2::TimePointZero);
+        auto transform_msg = tf_buffer_->lookupTransform(this->base_frame, tf_frame, tf2::TimePointZero);
         // update the time stamp of the tf2 buffer
         current_tf2_time_stamp_ = transform_msg.header.stamp;
         bonemap[frame] = transform(transform_msg.transform.translation.x, transform_msg.transform.translation.y,
@@ -222,7 +225,7 @@ class AdamRetarget : public rclcpp::Node {
                                    transform_msg.transform.rotation.w);
       } catch (const std::exception &e) {
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 3000, "Failed to get transform from %s to %s",
-                             this->base_frame.c_str(), frame.c_str());
+                             this->base_frame.c_str(), tf_frame.c_str());
       }
     }
     if (bonemap.size() != needed_bone_names.size()) {
@@ -303,6 +306,7 @@ class AdamRetarget : public rclcpp::Node {
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
 
   std::string base_frame;
+  std::string bone_frame_prefix;
   double control_loop_rate;
   std::string config_json_path;
 

@@ -30,18 +30,49 @@ def generate_launch_description():
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
-        name="robot_state_publisher",
+        name="robot_state_publisher_mocap",
         output="screen",
-        parameters=[{"robot_description": robot_desc}],
+        parameters=[{
+            "robot_description": robot_desc,
+            "frame_prefix": "mocap/"
+        }],
         remappings=[("/joint_states", "/primeu/joint_states")],
     )
 
-    # transform noitom y-up to z-up (match existing ADAM noitom pipeline)
-    static_transform_publisher_node = Node(
+    # 3. Controller Bridge (Connects mocap JointState to ros2_control commands)
+    primeu_controller_bridge_node = Node(
+        package="adam_retarget",
+        executable="primeu_bridge_node.py",
+        name="primeu_controller_bridge",
+        output="screen",
+        parameters=[
+            {
+                "publish_rate": 100.0,
+                "stale_timeout": 0.25,
+            }
+        ],
+    )
+
+    # --- TF roots ---
+    # Global root is `world`.
+    # Noitom raw data is published in `world_noitom_yup`.
+    # We provide a z-up root `world_noitom` and connect it to the raw y-up frame.
+
+    world_to_world_noitom = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        name="static_transform_publisher",
+        name="world_to_world_noitom",
         output="screen",
+        arguments=["0", "0", "0", "0", "0", "0", "world", "world_noitom"],
+    )
+
+    noitom_yup_to_zup = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="noitom_yup_to_zup",
+        output="screen",
+        # Quaternion (0.7071,0,0,0.7071) == +90deg about X.
+        # This provides a fixed relation between z-up and y-up roots.
         arguments=[
             "0",
             "0",
@@ -50,10 +81,18 @@ def generate_launch_description():
             "0",
             "0",
             "0.707106781",
-            "world_zup",
-            "world",
+            "world_noitom",
+            "world_noitom_yup",
         ],
-        remappings=[("/tf", "/mocap/tf"), ("/tf_static", "/mocap/tf_static")],
+    )
+
+    # Anchor the mocap robot TF tree (frame_prefix=mocap/) into the global world.
+    mocap_robot_anchor = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="mocap_robot_anchor",
+        output="screen",
+        arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/body_base"],
     )
 
     # Retarget (reuse ADAM-U noitom solver) + publish to /adam/joint_states
@@ -72,7 +111,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "base_frame": "world_zup",
+                "base_frame": "world_noitom",
+                "bone_frame_prefix": "noitom/",
                 "control_loop_rate": 100.0,
                 "config_json_path": default_config_json_path,
                 "warm_start_trig_timeout": 0.2,
@@ -81,8 +121,6 @@ def generate_launch_description():
             },
         ],
         remappings=[
-            ("/tf", "/mocap/tf"),
-            ("/tf_static", "/mocap/tf_static"),
             ("/joint_states", "/adam/joint_states"),
         ],
     )
@@ -108,13 +146,18 @@ def generate_launch_description():
         package="noitom_mocap",
         executable="noitom_mocap",
         name="noitom_robot_tf_broadcaster",
-        remappings=[("/tf", "/mocap/tf")],
+        parameters=[
+            {"root_frame": "world_noitom_yup", "child_prefix": "noitom/"}
+        ],
     )
 
     ld.add_action(robot_state_publisher_node)
     ld.add_action(adam_retarget_node)
     ld.add_action(primeu_joint_remap_node)
-    ld.add_action(static_transform_publisher_node)
+    ld.add_action(primeu_controller_bridge_node)
+    ld.add_action(world_to_world_noitom)
+    ld.add_action(noitom_yup_to_zup)
+    ld.add_action(mocap_robot_anchor)
     ld.add_action(noitom_mocap)
 
     rviz_config_file = "rviz/robot.rviz"

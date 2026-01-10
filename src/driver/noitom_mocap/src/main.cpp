@@ -10,10 +10,21 @@
 class RobotTfBroadcaster : public rclcpp::Node {
  public:
   RobotTfBroadcaster() : Node("noitom_robot_tf_broadcaster") {
+  this->declare_parameter<std::string>("root_frame", "world");
+  this->declare_parameter<std::string>("child_prefix", "");
+
+  const auto root_frame = this->get_parameter("root_frame").as_string();
+  const auto child_prefix = this->get_parameter("child_prefix").as_string();
+  pnd::noitom_mocap::DataHandler::getInstance().set_root_frame(root_frame);
+  pnd::noitom_mocap::DataHandler::getInstance().set_child_prefix(child_prefix);
+
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
     pnd::noitom_mocap::DataHandler::getInstance().reg_handle(
         std::bind(&RobotTfBroadcaster::broadcast_joint_transforms, this, std::placeholders::_1));
+
+  // Start mocap thread after configuration.
+  pnd::noitom_mocap::DataHandler::getInstance().init();
   }
 
  private:
@@ -31,7 +42,6 @@ class RobotTfBroadcaster : public rclcpp::Node {
 
 int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
-  pnd::noitom_mocap::DataHandler::getInstance().init();
   rclcpp::spin(std::make_shared<RobotTfBroadcaster>());
   rclcpp::shutdown();
   pnd::noitom_mocap::DataHandler::getInstance().exit();
