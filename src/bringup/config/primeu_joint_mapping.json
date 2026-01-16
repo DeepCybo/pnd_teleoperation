@@ -4,20 +4,20 @@
     "dof_pos/waistRoll": {"output": "waist_roll_joint", "scale": 1.0, "offset": 0.0},
     "dof_pos/waistPitch": {"output": "waist_pitch_joint", "scale": 1.0, "offset": 0.0},
 
-    "dof_pos/shoulderPitch_Left": {"output": "arm_left_shoulder_pitch_joint", "scale": 1.0, "offset": 0.7854},
-    "dof_pos/shoulderRoll_Left": {"output": "arm_left_shoulder_roll_joint", "scale": -1.0, "offset": 0.5236},
-    "dof_pos/shoulderYaw_Left": {"output": "arm_left_shoulder_yaw_joint", "scale": -1.0, "offset": 0.0},
-    "dof_pos/elbow_Left": {"output": "arm_left_elbow_pitch_joint", "scale": -1.0, "offset": -1.17},
-    "dof_pos/wristYaw_Left": {"output": "arm_left_wrist_yaw_joint", "scale": -1.0, "offset": 0.0},
-    "dof_pos/wristPitch_Left": {"output": "arm_left_wrist_roll_joint", "scale": 1.0, "offset": 0.0},
-    "dof_pos/wristRoll_Left": {"output": "arm_left_wrist_pitch_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/shoulderPitch_Left": {"output": "left_shoulder_pitch_joint", "scale": 1.0, "offset": 0.7853981634},
+    "dof_pos/shoulderRoll_Left": {"output": "left_shoulder_roll_joint", "scale": -1.0, "offset": 0.6981317008},
+    "dof_pos/shoulderYaw_Left": {"output": "left_shoulder_yaw_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/elbow_Left": {"output": "left_elbow_pitch_joint", "scale": -1.0, "offset": -1.1780972450961724},
+    "dof_pos/wristYaw_Left": {"output": "left_wrist_roll_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/wristPitch_Left": {"output": "left_wrist_pitch_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/wristRoll_Left": {"output": "left_wrist_yaw_joint", "scale": -1.0, "offset": 0.0},
 
-    "dof_pos/shoulderPitch_Right": {"output": "arm_right_shoulder_pitch_joint", "scale": -1.0, "offset": -0.7854},
-    "dof_pos/shoulderRoll_Right": {"output": "arm_right_shoulder_roll_joint", "scale": -1.0, "offset": -0.5236},
-    "dof_pos/shoulderYaw_Right": {"output": "arm_right_shoulder_yaw_joint", "scale": -1.0, "offset": 0.0},
-    "dof_pos/elbow_Right": {"output": "arm_right_elbow_pitch_joint", "scale": 1.0, "offset": 1.17},
-    "dof_pos/wristYaw_Right": {"output": "arm_right_wrist_yaw_joint", "scale": -1.0, "offset": 0.0},
-    "dof_pos/wristPitch_Right": {"output": "arm_right_wrist_roll_joint", "scale": -1.0, "offset": 0.0},
-    "dof_pos/wristRoll_Right": {"output": "arm_right_wrist_pitch_joint", "scale": -1.0, "offset": 0.0}
+    "dof_pos/shoulderPitch_Right": {"output": "right_shoulder_pitch_joint", "scale": -1.0, "offset": -0.7853981634},
+    "dof_pos/shoulderRoll_Right": {"output": "right_shoulder_roll_joint", "scale": -1.0, "offset": -0.6981317008},
+    "dof_pos/shoulderYaw_Right": {"output": "right_shoulder_yaw_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/elbow_Right": {"output": "right_elbow_pitch_joint", "scale": 1.0, "offset": 1.1780972450961724},
+    "dof_pos/wristYaw_Right": {"output": "right_wrist_roll_joint", "scale": -1.0, "offset": 0.0},
+    "dof_pos/wristPitch_Right": {"output": "right_wrist_pitch_joint", "scale": 1.0, "offset": 0.0},
+    "dof_pos/wristRoll_Right": {"output": "right_wrist_yaw_joint", "scale": 1.0, "offset": 0.0}
   }
 }

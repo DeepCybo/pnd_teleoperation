@@ -36,22 +36,22 @@ class PrimeUJointRemap(Node):
             "dof_pos/waistPitch": JointMap(output="waist_pitch_joint"),
 
             # Left arm
-            "dof_pos/shoulderPitch_Left": JointMap(output="arm_left_shoulder_pitch_joint"),
-            "dof_pos/shoulderRoll_Left": JointMap(output="arm_left_shoulder_roll_joint"),
-            "dof_pos/shoulderYaw_Left": JointMap(output="arm_left_shoulder_yaw_joint"),
-            "dof_pos/elbow_Left": JointMap(output="arm_left_elbow_pitch_joint"),
-            "dof_pos/wristYaw_Left": JointMap(output="arm_left_wrist_yaw_joint"),
-            "dof_pos/wristPitch_Left": JointMap(output="arm_left_wrist_pitch_joint"),
-            "dof_pos/wristRoll_Left": JointMap(output="arm_left_wrist_roll_joint"),
+            "dof_pos/shoulderPitch_Left": JointMap(output="left_shoulder_pitch_joint"),
+            "dof_pos/shoulderRoll_Left": JointMap(output="left_shoulder_roll_joint"),
+            "dof_pos/shoulderYaw_Left": JointMap(output="left_shoulder_yaw_joint"),
+            "dof_pos/elbow_Left": JointMap(output="left_elbow_pitch_joint"),
+            "dof_pos/wristYaw_Left": JointMap(output="left_wrist_yaw_joint"),
+            "dof_pos/wristPitch_Left": JointMap(output="left_wrist_pitch_joint"),
+            "dof_pos/wristRoll_Left": JointMap(output="left_wrist_roll_joint"),
 
             # Right arm
-            "dof_pos/shoulderPitch_Right": JointMap(output="arm_right_shoulder_pitch_joint"),
-            "dof_pos/shoulderRoll_Right": JointMap(output="arm_right_shoulder_roll_joint"),
-            "dof_pos/shoulderYaw_Right": JointMap(output="arm_right_shoulder_yaw_joint"),
-            "dof_pos/elbow_Right": JointMap(output="arm_right_elbow_pitch_joint"),
-            "dof_pos/wristYaw_Right": JointMap(output="arm_right_wrist_yaw_joint"),
-            "dof_pos/wristPitch_Right": JointMap(output="arm_right_wrist_pitch_joint"),
-            "dof_pos/wristRoll_Right": JointMap(output="arm_right_wrist_roll_joint"),
+            "dof_pos/shoulderPitch_Right": JointMap(output="right_shoulder_pitch_joint"),
+            "dof_pos/shoulderRoll_Right": JointMap(output="right_shoulder_roll_joint"),
+            "dof_pos/shoulderYaw_Right": JointMap(output="right_shoulder_yaw_joint"),
+            "dof_pos/elbow_Right": JointMap(output="right_elbow_pitch_joint"),
+            "dof_pos/wristYaw_Right": JointMap(output="right_wrist_yaw_joint"),
+            "dof_pos/wristPitch_Right": JointMap(output="right_wrist_pitch_joint"),
+            "dof_pos/wristRoll_Right": JointMap(output="right_wrist_roll_joint"),
         }
 
         self._map: Dict[str, JointMap] = self._load_mapping_file(mapping_file) or self._default_map

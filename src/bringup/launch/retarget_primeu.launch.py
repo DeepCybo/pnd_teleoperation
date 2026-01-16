@@ -47,7 +47,13 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "publish_rate": 100.0,
+                # High-rate publish with interpolation for CSP mode EtherCAT drives
+                # publish_rate: 1000Hz to match hardware control loop
+                # interpolation_alpha: 0.15 gives ~7ms time constant for smooth motion
+                # max_velocity_rad_s: 5.0 rad/s (~286 deg/s) safety limit
+                "publish_rate": 1000.0,
+                "interpolation_alpha": 0.05,
+                "max_velocity_rad_s": 2.0,
                 "stale_timeout": 0.25,
             }
         ],
@@ -92,7 +98,7 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="mocap_robot_anchor",
         output="screen",
-        arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/body_base"],
+        arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/base_link"],
     )
 
     # Retarget (reuse ADAM-U noitom solver) + publish to /adam/joint_states
