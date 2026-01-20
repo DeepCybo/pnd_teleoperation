@@ -47,14 +47,20 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                # High-rate publish with interpolation for CSP mode EtherCAT drives
-                # publish_rate: 1000Hz to match hardware control loop
-                # interpolation_alpha: 0.15 gives ~7ms time constant for smooth motion
-                # max_velocity_rad_s: 5.0 rad/s (~286 deg/s) safety limit
-                "publish_rate": 1000.0,
-                "interpolation_alpha": 0.05,
-                "max_velocity_rad_s": 2.0,
-                "stale_timeout": 0.25,
+                # High-rate publish for CSP mode EtherCAT drives
+                "publish_rate": 500.0,
+                "stale_timeout": 0.05,
+                # OneEuroFilter
+                "one_euro_min_cutoff": 1.0,
+                "one_euro_beta": 0.007,
+                "one_euro_d_cutoff": 1.0,
+                # Motion limits (conservative)
+                "max_velocity_rad_s": 1.5,
+                "max_accel_rad_s2": 6.0,
+                "max_jerk_rad_s3": 60.0,
+                "enable_motion_limits": False,
+                # Legacy interpolation parameter (kept for compatibility)
+                "interpolation_alpha": 0.0,
             }
         ],
     )

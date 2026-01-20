@@ -7,6 +7,39 @@ from std_msgs.msg import Float64MultiArray
 from typing import Dict, List, Optional, Sequence
 import math
 
+class OneEuroFilter:
+    def __init__(self, min_cutoff: float, beta: float, d_cutoff: float):
+        self.min_cutoff = min_cutoff
+        self.beta = beta
+        self.d_cutoff = d_cutoff
+        self._x_prev: Optional[float] = None
+        self._dx_prev: float = 0.0
+
+    @staticmethod
+    def _alpha(cutoff: float, dt: float) -> float:
+        if cutoff <= 0.0 or dt <= 0.0:
+            return 1.0
+        tau = 1.0 / (2.0 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def filter(self, x: float, dt: float) -> float:
+        if self._x_prev is None or dt <= 0.0:
+            self._x_prev = x
+            self._dx_prev = 0.0
+            return x
+
+        dx = (x - self._x_prev) / dt
+        alpha_d = self._alpha(self.d_cutoff, dt)
+        dx_hat = self._dx_prev + alpha_d * (dx - self._dx_prev)
+
+        cutoff = self.min_cutoff + self.beta * abs(dx_hat)
+        alpha = self._alpha(cutoff, dt)
+        x_hat = self._x_prev + alpha * (x - self._x_prev)
+
+        self._x_prev = x_hat
+        self._dx_prev = dx_hat
+        return x_hat
+
 class PrimeUBridgeNode(Node):
     """
     Bridge between Mocap Retargeting output and ros2_control controllers.
@@ -30,7 +63,13 @@ class PrimeUBridgeNode(Node):
         #   For 1000Hz publish, alpha=0.1 gives ~10ms time constant (smooth)
         # - max_velocity_rad_s: limit velocity to prevent jerks (rad/s per joint)
         self.declare_parameter("interpolation_alpha", 0.0)  # 0 = disabled
-        self.declare_parameter("max_velocity_rad_s", 3.0)   # rad/s (~170 deg/s)
+        self.declare_parameter("max_velocity_rad_s", 1.5)   # rad/s (~86 deg/s)
+        self.declare_parameter("max_accel_rad_s2", 6.0)     # rad/s^2
+        self.declare_parameter("max_jerk_rad_s3", 60.0)     # rad/s^3
+        # OneEuroFilter parameters (recommended defaults)
+        self.declare_parameter("one_euro_min_cutoff", 1.0)
+        self.declare_parameter("one_euro_beta", 0.007)
+        self.declare_parameter("one_euro_d_cutoff", 1.0)
 
         self.publish_rate: float = float(
             self.get_parameter("publish_rate").get_parameter_value().double_value
@@ -44,13 +83,34 @@ class PrimeUBridgeNode(Node):
         self.max_velocity_rad_s: float = float(
             self.get_parameter("max_velocity_rad_s").get_parameter_value().double_value
         )
-
+        self.max_accel_rad_s2: float = float(
+            self.get_parameter("max_accel_rad_s2").get_parameter_value().double_value
+        )
+        self.max_jerk_rad_s3: float = float(
+            self.get_parameter("max_jerk_rad_s3").get_parameter_value().double_value
+        )
+        self.one_euro_min_cutoff: float = float(
+            self.get_parameter("one_euro_min_cutoff").get_parameter_value().double_value
+        )
+        self.one_euro_beta: float = float(
+            self.get_parameter("one_euro_beta").get_parameter_value().double_value
+        )
+        self.one_euro_d_cutoff: float = float(
+            self.get_parameter("one_euro_d_cutoff").get_parameter_value().double_value
+        )
         # Parameters for arm joints (must match hybrid_controllers.yaml order)
-        self.declare_parameter("left_arm_joints", [
-            "left_shoulder_pitch_joint", "left_shoulder_roll_joint",
-            "left_shoulder_yaw_joint", "left_elbow_pitch_joint",
-            "left_wrist_yaw_joint", "left_wrist_roll_joint", "left_wrist_pitch_joint"
-        ])
+        self.declare_parameter(
+            "left_arm_joints",
+            [
+                "left_shoulder_pitch_joint",
+                "left_shoulder_roll_joint",
+                "left_shoulder_yaw_joint",
+                "left_elbow_pitch_joint",
+                "left_wrist_roll_joint",
+                "left_wrist_pitch_joint",
+                "left_wrist_yaw_joint"
+            ],
+        )
         self.declare_parameter(
             "right_arm_joints",
             [
@@ -84,16 +144,14 @@ class PrimeUBridgeNode(Node):
 
         # Target positions (updated by joint_callback)
         self._target_joint_dict: Dict[str, float] = {}
-        # Current interpolated positions (updated by timer, sent to controller)
-        self._current_joint_dict: Dict[str, float] = {}
+        # Filtered target positions (OneEuroFilter output)
+        self._filtered_joint_dict: Dict[str, float] = {}
+        # OneEuroFilter per joint
+        self._filters: Dict[str, OneEuroFilter] = {}
         self._last_msg_time = None  # rclpy.time.Time
         self._last_missing_warn_time = None  # rclpy.time.Time
         self._initialized = False  # First command received?
-
-        # Compute max step per publish cycle
-        self._max_step_per_cycle = 0.0
-        if self.publish_rate > 0.0:
-            self._max_step_per_cycle = self.max_velocity_rad_s / self.publish_rate
+        self._last_update_time = None  # rclpy.time.Time
 
         self._timer = None
         if self.publish_rate and self.publish_rate > 0.0:
@@ -104,46 +162,38 @@ class PrimeUBridgeNode(Node):
         self.get_logger().info(
             f"PrimeU Bridge Node Started. Subscribing to /primeu/joint_states. "
             f"publish_rate={self.publish_rate}Hz stale_timeout={self.stale_timeout}s "
-            f"interpolation={interp_status} max_vel={self.max_velocity_rad_s} rad/s"
+            f"interpolation={interp_status} "
+            f"one_euro(min_cutoff={self.one_euro_min_cutoff}, beta={self.one_euro_beta}, d_cutoff={self.one_euro_d_cutoff}) "
+            f"limits(v={self.max_velocity_rad_s}, a={self.max_accel_rad_s2}, j={self.max_jerk_rad_s3})"
         )
 
-    def _interpolate_step(self) -> None:
-        """
-        Move _current_joint_dict towards _target_joint_dict by one interpolation step.
-        Uses exponential smoothing with velocity limiting.
-        """
+    def _get_filter(self, joint_name: str) -> OneEuroFilter:
+        filt = self._filters.get(joint_name)
+        if filt is None:
+            filt = OneEuroFilter(
+                self.one_euro_min_cutoff, self.one_euro_beta, self.one_euro_d_cutoff
+            )
+            self._filters[joint_name] = filt
+        return filt
+
+    def _filter_targets(self, dt: float) -> Dict[str, float]:
         if not self._target_joint_dict:
-            return
-
-        if not self._initialized:
-            # First time: snap to target
-            self._current_joint_dict = dict(self._target_joint_dict)
-            self._initialized = True
-            return
-
-        alpha = self.interpolation_alpha
-        max_step = self._max_step_per_cycle
-
+            return {}
+        filtered: Dict[str, float] = {}
+        use_one_euro = (
+            self.one_euro_min_cutoff > 0.0
+            or self.one_euro_beta > 0.0
+            or self.one_euro_d_cutoff > 0.0
+        )
         for joint_name, target_pos in self._target_joint_dict.items():
-            current_pos = self._current_joint_dict.get(joint_name, target_pos)
-
-            if alpha <= 0.0:
-                # No interpolation, just use target directly
-                new_pos = target_pos
+            if use_one_euro:
+                filtered[joint_name] = self._get_filter(joint_name).filter(target_pos, dt)
             else:
-                # Exponential smoothing: new = current + alpha * (target - current)
-                delta = target_pos - current_pos
+                filtered[joint_name] = target_pos
+        return filtered
 
-                # Apply alpha
-                step = alpha * delta
-
-                # Clamp by max velocity
-                if max_step > 0.0 and abs(step) > max_step:
-                    step = math.copysign(max_step, step)
-
-                new_pos = current_pos + step
-
-            self._current_joint_dict[joint_name] = new_pos
+    def _filtered_targets_ready(self) -> bool:
+        return bool(self._filtered_joint_dict)
 
     def _pack_arm(
         self, joint_dict: Dict[str, float], joint_list: Sequence[str]
@@ -189,12 +239,16 @@ class PrimeUBridgeNode(Node):
             # Stop commanding if upstream data is stale.
             return
 
-        # Perform interpolation step if enabled
-        if self.interpolation_alpha > 0.0:
-            self._interpolate_step()
-            self._publish_from_joint_dict(self._current_joint_dict)
+        now = self.get_clock().now()
+        if self._last_update_time is None:
+            dt = 0.0
         else:
-            self._publish_from_joint_dict(self._target_joint_dict)
+            dt = (now - self._last_update_time).nanoseconds / 1e9
+        self._last_update_time = now
+
+        self._filtered_joint_dict = self._filter_targets(dt)
+        if self._filtered_targets_ready():
+            self._publish_from_joint_dict(self._filtered_joint_dict)
 
     def joint_callback(self, msg: JointState):
         # Create a mapping for quick lookup
@@ -205,7 +259,16 @@ class PrimeUBridgeNode(Node):
 
         # If not using timer-based publish, publish immediately on input (no interpolation).
         if not self.publish_rate or self.publish_rate <= 0.0:
-            self._publish_from_joint_dict(joint_dict)
+            now = self._last_msg_time
+            if self._last_update_time is None:
+                dt = 0.0
+            else:
+                dt = (now - self._last_update_time).nanoseconds / 1e9
+            self._last_update_time = now
+
+            self._filtered_joint_dict = self._filter_targets(dt)
+            if self._filtered_targets_ready():
+                self._publish_from_joint_dict(self._filtered_joint_dict)
 
 def main():
     rclpy.init()
