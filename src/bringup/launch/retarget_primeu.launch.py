@@ -104,7 +104,7 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="mocap_robot_anchor",
         output="screen",
-        arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/base_link"],
+        arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/body_base_link"],
     )
 
     # Retarget (reuse ADAM-U noitom solver) + publish to /adam/joint_states
