@@ -56,6 +56,7 @@ class PrimeUBridgeNode(Node):
         # - publish_rate  > 0: publish at fixed rate with optional interpolation
         self.declare_parameter("publish_rate", 0.0)
         self.declare_parameter("stale_timeout", 0.25)  # seconds
+        self.declare_parameter("input_topic", "/primeu/joint_states")
 
         # Interpolation parameters
         # - interpolation_alpha: 0.0 = no interpolation (step), 1.0 = instant jump
@@ -73,6 +74,9 @@ class PrimeUBridgeNode(Node):
 
         self.publish_rate: float = float(
             self.get_parameter("publish_rate").get_parameter_value().double_value
+        )
+        self.input_topic: str = (
+            self.get_parameter("input_topic").get_parameter_value().string_value
         )
         self.stale_timeout: float = float(
             self.get_parameter("stale_timeout").get_parameter_value().double_value
@@ -123,6 +127,10 @@ class PrimeUBridgeNode(Node):
                 "right_wrist_yaw_joint"
             ],
         )
+        self.declare_parameter(
+            "waist_joints",
+            ["waist_yaw_joint"],
+        )
 
         # rclpy Parameter.value is typed as Any; read as string array explicitly.
         self.left_joints: List[str] = list(
@@ -131,16 +139,20 @@ class PrimeUBridgeNode(Node):
         self.right_joints: List[str] = list(
             self.get_parameter("right_arm_joints").get_parameter_value().string_array_value
         )
+        self.waist_joints: List[str] = list(
+            self.get_parameter("waist_joints").get_parameter_value().string_array_value
+        )
 
-        if not self.left_joints and not self.right_joints:
-            self.get_logger().warn("No arm joints configured; bridge will be idle")
+        if not self.left_joints and not self.right_joints and not self.waist_joints:
+            self.get_logger().warn("No joints configured; bridge will be idle")
 
         # Publishers for controllers
         self.left_pub = self.create_publisher(Float64MultiArray, "/left_arm_servo_controller/commands", 10)
         self.right_pub = self.create_publisher(Float64MultiArray, "/right_arm_servo_controller/commands", 10)
+        self.waist_pub = self.create_publisher(Float64MultiArray, "/waist_servo_controller/commands", 10)
 
         # Subscriber to remap output
-        self.sub = self.create_subscription(JointState, "/primeu/joint_states", self.joint_callback, 10)
+        self.sub = self.create_subscription(JointState, self.input_topic, self.joint_callback, 10)
 
         # Target positions (updated by joint_callback)
         self._target_joint_dict: Dict[str, float] = {}
@@ -160,7 +172,7 @@ class PrimeUBridgeNode(Node):
 
         interp_status = "disabled" if self.interpolation_alpha <= 0.0 else f"alpha={self.interpolation_alpha}"
         self.get_logger().info(
-            f"PrimeU Bridge Node Started. Subscribing to /primeu/joint_states. "
+            f"PrimeU Bridge Node Started. Subscribing to {self.input_topic}. "
             f"publish_rate={self.publish_rate}Hz stale_timeout={self.stale_timeout}s "
             f"interpolation={interp_status} "
             f"one_euro(min_cutoff={self.one_euro_min_cutoff}, beta={self.one_euro_beta}, d_cutoff={self.one_euro_d_cutoff}) "
@@ -229,6 +241,11 @@ class PrimeUBridgeNode(Node):
             right_cmd = self._pack_arm(joint_dict, self.right_joints)
             if right_cmd is not None:
                 self.right_pub.publish(right_cmd)
+
+        if self.waist_joints:
+            waist_cmd = self._pack_arm(joint_dict, self.waist_joints)
+            if waist_cmd is not None:
+                self.waist_pub.publish(waist_cmd)
 
     def _on_timer(self) -> None:
         if self._last_msg_time is None:

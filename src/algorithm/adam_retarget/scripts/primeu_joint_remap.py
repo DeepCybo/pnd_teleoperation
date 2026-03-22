@@ -32,8 +32,8 @@ class PrimeUJointRemap(Node):
         self._default_map: Dict[str, JointMap] = {
             # Waist
             "dof_pos/waistYaw": JointMap(output="waist_yaw_joint"),
-            "dof_pos/waistRoll": JointMap(output="waist_roll_joint"),
-            "dof_pos/waistPitch": JointMap(output="waist_pitch_joint"),
+            "dof_pos/waistRoll": JointMap(output="waist_roll_passive_joint"),
+            "dof_pos/waistPitch": JointMap(output="waist_pitch_passive_joint"),
 
             # Left arm
             "dof_pos/shoulderPitch_Left": JointMap(output="left_shoulder_pitch_joint"),

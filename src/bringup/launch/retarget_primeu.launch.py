@@ -17,10 +17,16 @@ def generate_launch_description():
         choices=["rviz2", "foxglove"],
     )
     ld.add_entity(visual_declare)
+    enable_head_ik_declare = DeclareLaunchArgument(
+        "enable_head_ik",
+        default_value="true",
+        description="Enable Noitom head tracking -> neck servo Pinocchio IK node",
+    )
+    ld.add_entity(enable_head_ik_declare)
 
     # URDF (PrimeU)
     package_name = "primeu_description"
-    urdf_name = "urdf/primeu_robot.urdf"
+    urdf_name = "urdf/primeu_robot_with_wuji_hands.urdf"
     urdf_pkg_share = FindPackageShare(package=package_name).find(package_name)
     urdf_model_path = os.path.join(urdf_pkg_share, urdf_name)
 
@@ -48,6 +54,7 @@ def generate_launch_description():
         parameters=[
             {
                 # High-rate publish for CSP mode EtherCAT drives
+                "input_topic": "/primeu/remap_joint_states",
                 "publish_rate": 500.0,
                 "stale_timeout": 0.05,
                 # OneEuroFilter
@@ -148,10 +155,35 @@ def generate_launch_description():
         parameters=[
             {
                 "input_topic": "/adam/joint_states",
-                "output_topic": "/primeu/joint_states",
+                "output_topic": "/primeu/remap_joint_states",
                 "mapping_file": mapping_file_path,
             }
         ],
+    )
+
+    head_pinocchio_ik_node = Node(
+        package="adam_retarget",
+        executable="head_pinocchio_ik.py",
+        name="head_pinocchio_ik",
+        output="screen",
+        parameters=[
+            {
+                "joint_state_topic": "/joint_states",
+                "command_topic": "/neck_servo_controller/commands",
+                "visualization_source_topic": "/primeu/remap_joint_states",
+                "visualization_joint_topic": "/primeu/joint_states",
+                "mocap_neck_frame": "noitom/Neck",
+                "mocap_head_frame": "noitom/Head",
+                "robot_base_frame": "chest_link",
+                "robot_tip_frame": "neck_pitch_link",
+                "publish_rate": 100.0,
+                "tf_timeout_sec": 0.05,
+                "command_smoothing_alpha": 0.35,
+                "auto_calibrate": True,
+                "publish_debug_topics": True,
+            }
+        ],
+        condition=LaunchConfigurationEquals("enable_head_ik", "true"),
     )
 
     noitom_mocap = Node(
@@ -167,6 +199,7 @@ def generate_launch_description():
     ld.add_action(adam_retarget_node)
     ld.add_action(primeu_joint_remap_node)
     ld.add_action(primeu_controller_bridge_node)
+    ld.add_action(head_pinocchio_ik_node)
     ld.add_action(world_to_world_noitom)
     ld.add_action(noitom_yup_to_zup)
     ld.add_action(mocap_robot_anchor)
