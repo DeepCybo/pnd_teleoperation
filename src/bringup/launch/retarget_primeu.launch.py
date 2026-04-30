@@ -46,6 +46,19 @@ def generate_launch_description():
     )
 
     # 3. Controller Bridge (Connects mocap JointState to ros2_control commands)
+    #
+    # NOTE: the waist output from this bridge is remapped to a dead topic so
+    # the real /waist_servo_controller/commands is only driven by the
+    # parallel IK pipeline:
+    #     /primeu/remap_joint_states (roll/pitch/yaw)
+    #         -> waist_retarget_bridge
+    #         -> /waist_parallel_ik_node/target_rpy
+    #         -> waist_parallel_ik_node
+    #         -> /waist_servo_controller/commands
+    # Letting the legacy bridge also publish to the real waist controller
+    # would race against the IK node on the same topic.
+    # (We cannot pass `waist_joints: []` here: ROS 2 Jazzy's launch rejects
+    #  empty-list parameter values as an untyped tuple.)
     primeu_controller_bridge_node = Node(
         package="adam_retarget",
         executable="primeu_bridge_node.py",
@@ -68,6 +81,55 @@ def generate_launch_description():
                 "enable_motion_limits": False,
                 # Legacy interpolation parameter (kept for compatibility)
                 "interpolation_alpha": 0.0,
+            }
+        ],
+        remappings=[
+            (
+                "/waist_servo_controller/commands",
+                "/waist_servo_controller/commands_disabled_by_parallel_ik",
+            ),
+        ],
+    )
+
+    # Waist retarget bridge: taps the retargeted joint state, extracts
+    # waist_roll_passive_joint / waist_pitch_passive_joint / waist_yaw_joint,
+    # clamps / sign-flips them, and publishes a Vector3(rad) to the waist
+    # parallel-link IK node.
+    #
+    # Smoothing (OneEuro) is intentionally disabled here: the IK node is
+    # now the rate master and runs its own OneEuro at the solve tick
+    # (default 500 Hz). Double-filtering here would only add lag without
+    # reducing jitter. Publish rate on this side only needs to be >= the
+    # retarget source rate (typ. 100 Hz); the IK node interpolates up to
+    # 500 Hz on its own tick.
+    waist_retarget_bridge_node = Node(
+        package="primeu_waist_ik",
+        executable="waist_retarget_bridge.py",
+        name="waist_retarget_bridge",
+        output="screen",
+        parameters=[
+            {
+                "input_topic": "/primeu/remap_joint_states",
+                "output_topic": "/waist_parallel_ik_node/target_rpy",
+                "roll_joint": "waist_roll_passive_joint",
+                "pitch_joint": "waist_pitch_passive_joint",
+                "yaw_joint": "waist_yaw_joint",
+                "publish_rate": 200.0,
+                "stale_timeout": 0.1,
+                # OneEuro disabled here; IK node does the smoothing.
+                "one_euro_min_cutoff": 0.0,
+                "one_euro_beta": 0.0,
+                "one_euro_d_cutoff": 0.0,
+                # Match the waist_parallel_ik_node's passive joint ranges.
+                "max_roll_rad": 0.5236,   # ~30 deg
+                "max_pitch_rad": 0.5236,  # ~30 deg
+                "max_yaw_rad": 3.1416,    # ~180 deg
+                # The retarget source's waist roll / pitch are mirrored
+                # relative to the MJCF-IK convention used by
+                # waist_parallel_ik_node, so flip their signs here.
+                "roll_sign": -1.0,
+                "pitch_sign": -1.0,
+                "yaw_sign": 1.0,
             }
         ],
     )
@@ -199,6 +261,7 @@ def generate_launch_description():
     ld.add_action(adam_retarget_node)
     ld.add_action(primeu_joint_remap_node)
     ld.add_action(primeu_controller_bridge_node)
+    ld.add_action(waist_retarget_bridge_node)
     ld.add_action(head_pinocchio_ik_node)
     ld.add_action(world_to_world_noitom)
     ld.add_action(noitom_yup_to_zup)
