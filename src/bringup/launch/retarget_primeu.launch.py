@@ -66,9 +66,11 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                # High-rate publish for CSP mode EtherCAT drives
+                # Mocap/retarget data arrives at 100 Hz. The 1 kHz hardware
+                # loop holds the latest command between ROS topic updates, so
+                # this bridge should not publish at motor-loop rate.
                 "input_topic": "/primeu/remap_joint_states",
-                "publish_rate": 500.0,
+                "publish_rate": 100.0,
                 "stale_timeout": 0.05,
                 # OneEuroFilter
                 "one_euro_min_cutoff": 1.0,
@@ -96,12 +98,10 @@ def generate_launch_description():
     # clamps / sign-flips them, and publishes a Vector3(rad) to the waist
     # parallel-link IK node.
     #
-    # Smoothing (OneEuro) is intentionally disabled here: the IK node is
-    # now the rate master and runs its own OneEuro at the solve tick
-    # (default 500 Hz). Double-filtering here would only add lag without
-    # reducing jitter. Publish rate on this side only needs to be >= the
-    # retarget source rate (typ. 100 Hz); the IK node interpolates up to
-    # 500 Hz on its own tick.
+    # Smoothing (OneEuro) is intentionally disabled here: the IK node owns
+    # waist smoothing at the 100 Hz mocap/retarget rate.  The 1 kHz control
+    # loop holds the latest command instead of asking IK to solve at motor
+    # frequency.
     waist_retarget_bridge_node = Node(
         package="primeu_waist_ik",
         executable="waist_retarget_bridge.py",
@@ -114,7 +114,7 @@ def generate_launch_description():
                 "roll_joint": "waist_roll_passive_joint",
                 "pitch_joint": "waist_pitch_passive_joint",
                 "yaw_joint": "waist_yaw_joint",
-                "publish_rate": 200.0,
+                "publish_rate": 100.0,
                 "stale_timeout": 0.1,
                 # OneEuro disabled here; IK node does the smoothing.
                 "one_euro_min_cutoff": 0.0,
@@ -238,11 +238,12 @@ def generate_launch_description():
                 "mocap_head_frame": "noitom/Head",
                 "robot_base_frame": "chest_link",
                 "robot_tip_frame": "neck_pitch_link",
-                "publish_rate": 100.0,
+                "publish_rate": 50.0,
                 "tf_timeout_sec": 0.05,
                 "command_smoothing_alpha": 0.35,
                 "auto_calibrate": True,
-                "publish_debug_topics": True,
+                "solver_max_nfev": 12,
+                "publish_debug_topics": False,
             }
         ],
         condition=LaunchConfigurationEquals("enable_head_ik", "true"),
