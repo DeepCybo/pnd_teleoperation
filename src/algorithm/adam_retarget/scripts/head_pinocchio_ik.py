@@ -23,10 +23,10 @@ class HeadPinocchioIk(Node):
     def __init__(self) -> None:
         super().__init__("head_pinocchio_ik")
 
-        self.declare_parameter("joint_state_topic", "/joint_states")
-        self.declare_parameter("command_topic", "/neck_servo_controller/commands")
-        self.declare_parameter("visualization_source_topic", "/primeu/remap_joint_states")
-        self.declare_parameter("visualization_joint_topic", "/primeu/joint_states")
+        self.declare_parameter("joint_state_topic", "/joint_state_broadcaster/joint_states")
+        self.declare_parameter("command_topic", "/primeu/control/human/raw/neck_commands")
+        self.declare_parameter("visualization_source_topic", "")
+        self.declare_parameter("visualization_joint_topic", "/primeu/mocap_visual_joint_states")
         self.declare_parameter("publish_rate", 100.0)
         self.declare_parameter("tf_timeout_sec", 0.05)
         self.declare_parameter("mocap_neck_frame", "noitom/Neck")
@@ -192,12 +192,13 @@ class HeadPinocchioIk(Node):
             self._joint_state_callback,
             joint_state_qos,
         )
-        self.create_subscription(
-            JointState,
-            self.visualization_source_topic,
-            self._visualization_source_callback,
-            10,
-        )
+        if self.visualization_source_topic:
+            self.create_subscription(
+                JointState,
+                self.visualization_source_topic,
+                self._visualization_source_callback,
+                10,
+            )
 
         period = 1.0 / self.publish_rate if self.publish_rate > 0.0 else 0.01
         self.create_timer(period, self._on_timer)

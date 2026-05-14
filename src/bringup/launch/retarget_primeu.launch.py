@@ -2,13 +2,16 @@ import os
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import LaunchConfigurationEquals
+from launch.conditions import IfCondition, LaunchConfigurationEquals
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
     ld = LaunchDescription()
+    enable_mocap_visual = LaunchConfiguration("enable_mocap_visual")
 
     visual_declare = DeclareLaunchArgument(
         "visual",
@@ -19,10 +22,52 @@ def generate_launch_description():
     ld.add_entity(visual_declare)
     enable_head_ik_declare = DeclareLaunchArgument(
         "enable_head_ik",
-        default_value="true",
-        description="Enable Noitom head tracking -> neck servo Pinocchio IK node",
+        default_value="false",
+        description="Enable Noitom head tracking -> PrimeU raw human neck IK node",
     )
     ld.add_entity(enable_head_ik_declare)
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "enable_mocap_visual",
+            default_value="false",
+            description="Enable the mocap shadow robot visualization model",
+        )
+    )
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "retarget_rate",
+            default_value="50.0",
+            description="ADAM retarget solver rate in Hz",
+        )
+    )
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "body_command_rate",
+            default_value="100.0",
+            description="Arm raw command publish rate in Hz",
+        )
+    )
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "waist_retarget_rate",
+            default_value="50.0",
+            description="Waist RPY bridge publish rate in Hz",
+        )
+    )
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "head_ik_rate",
+            default_value="30.0",
+            description="Head IK raw command publish rate in Hz",
+        )
+    )
+    ld.add_entity(
+        DeclareLaunchArgument(
+            "mocap_visual_rate",
+            default_value="30.0",
+            description="Mocap robot visualization JointState publish rate in Hz",
+        )
+    )
 
     # URDF (PrimeU)
     package_name = "primeu_description"
@@ -42,21 +87,28 @@ def generate_launch_description():
             "robot_description": robot_desc,
             "frame_prefix": "mocap/"
         }],
-        remappings=[("/joint_states", "/primeu/joint_states")],
+        remappings=[
+            ("/joint_states", "/primeu/mocap_visual_joint_states"),
+            ("/robot_description", "/mocap/robot_description"),
+        ],
+        condition=IfCondition(enable_mocap_visual),
     )
 
-    # 3. Controller Bridge (Connects mocap JointState to ros2_control commands)
+    # 3. Controller Bridge (Connects mocap JointState to raw human commands)
     #
-    # NOTE: the waist output from this bridge is remapped to a dead topic so
-    # the real /waist_servo_controller/commands is only driven by the
-    # parallel IK pipeline:
+    # NOTE: this launch publishes body retarget outputs only.  The PrimeU
+    # bringup's human trajectory bridge snapshots these raw groups into
+    # /primeu/control/human_trajectory for the unified controller.
+    #
+    # The waist output from this bridge is remapped to a dead topic so the
+    # waist path is only driven by the parallel IK pipeline:
     #     /primeu/remap_joint_states (roll/pitch/yaw)
     #         -> waist_retarget_bridge
     #         -> /waist_parallel_ik_node/target_rpy
     #         -> waist_parallel_ik_node
-    #         -> /waist_servo_controller/commands
-    # Letting the legacy bridge also publish to the real waist controller
-    # would race against the IK node on the same topic.
+    #         -> /primeu/control/human/raw/waist_commands
+    # Letting this bridge also publish a waist motor group would race against
+    # the IK node on the same raw human group.
     # (We cannot pass `waist_joints: []` here: ROS 2 Jazzy's launch rejects
     #  empty-list parameter values as an untyped tuple.)
     primeu_controller_bridge_node = Node(
@@ -70,7 +122,9 @@ def generate_launch_description():
                 # loop holds the latest command between ROS topic updates, so
                 # this bridge should not publish at motor-loop rate.
                 "input_topic": "/primeu/remap_joint_states",
-                "publish_rate": 100.0,
+                "publish_rate": ParameterValue(
+                    LaunchConfiguration("body_command_rate"), value_type=float
+                ),
                 "stale_timeout": 0.05,
                 # OneEuroFilter
                 "one_euro_min_cutoff": 1.0,
@@ -87,8 +141,16 @@ def generate_launch_description():
         ],
         remappings=[
             (
+                "/left_arm_servo_controller/commands",
+                "/primeu/control/human/raw/left_arm_commands",
+            ),
+            (
+                "/right_arm_servo_controller/commands",
+                "/primeu/control/human/raw/right_arm_commands",
+            ),
+            (
                 "/waist_servo_controller/commands",
-                "/waist_servo_controller/commands_disabled_by_parallel_ik",
+                "/primeu/control/human/raw/waist_commands_disabled_by_parallel_ik",
             ),
         ],
     )
@@ -114,7 +176,9 @@ def generate_launch_description():
                 "roll_joint": "waist_roll_passive_joint",
                 "pitch_joint": "waist_pitch_passive_joint",
                 "yaw_joint": "waist_yaw_joint",
-                "publish_rate": 100.0,
+                "publish_rate": ParameterValue(
+                    LaunchConfiguration("waist_retarget_rate"), value_type=float
+                ),
                 "stale_timeout": 0.1,
                 # OneEuro disabled here; IK node does the smoothing.
                 "one_euro_min_cutoff": 0.0,
@@ -174,6 +238,7 @@ def generate_launch_description():
         name="mocap_robot_anchor",
         output="screen",
         arguments=["0", "0", "0", "0", "0", "0", "world", "mocap/body_base_link"],
+        condition=IfCondition(enable_mocap_visual),
     )
 
     # Retarget (reuse ADAM-U noitom solver) + publish to /adam/joint_states
@@ -194,7 +259,9 @@ def generate_launch_description():
             {
                 "base_frame": "world_noitom",
                 "bone_frame_prefix": "noitom/",
-                "control_loop_rate": 100.0,
+                "control_loop_rate": ParameterValue(
+                    LaunchConfiguration("retarget_rate"), value_type=float
+                ),
                 "config_json_path": default_config_json_path,
                 "warm_start_trig_timeout": 0.2,
                 "warm_start_duration": 5.0,
@@ -223,6 +290,42 @@ def generate_launch_description():
         ],
     )
 
+    mocap_visual_joint_republisher_node = Node(
+        package="primeu_bringup",
+        executable="joint_state_visual_republisher.py",
+        name="mocap_visual_joint_state_republisher",
+        output="screen",
+        parameters=[
+            {
+                "source_topics": [
+                    "/primeu/remap_joint_states",
+                    "/left_hand/joint_commands",
+                    "/right_hand/joint_commands",
+                ],
+                "output_topic": "/primeu/mocap_visual_joint_states",
+                "publish_rate": ParameterValue(
+                    LaunchConfiguration("mocap_visual_rate"), value_type=float
+                ),
+                "source_stale_timeout_sec": 0.5,
+                "left_hand_source_topic": "/left_hand/joint_commands",
+                "right_hand_source_topic": "/right_hand/joint_commands",
+                "default_joint_names": [
+                    "waist_left_passive1_joint_z",
+                    "waist_left_passive1_joint_y",
+                    "waist_left_passive1_joint_x",
+                    "waist_right_passive1_joint_z",
+                    "waist_right_passive1_joint_y",
+                    "waist_right_passive1_joint_x",
+                    "neck_yaw_joint",
+                    "neck_roll_joint",
+                    "neck_pitch_joint",
+                ],
+                "default_joint_positions": [0.0] * 9,
+            }
+        ],
+        condition=IfCondition(enable_mocap_visual),
+    )
+
     head_pinocchio_ik_node = Node(
         package="adam_retarget",
         executable="head_pinocchio_ik.py",
@@ -230,15 +333,17 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "joint_state_topic": "/joint_states",
-                "command_topic": "/neck_servo_controller/commands",
-                "visualization_source_topic": "/primeu/remap_joint_states",
-                "visualization_joint_topic": "/primeu/joint_states",
+                "joint_state_topic": "/joint_state_broadcaster/joint_states",
+                "command_topic": "/primeu/control/human/raw/neck_commands",
+                "visualization_source_topic": "",
+                "visualization_joint_topic": "/primeu/mocap_visual_joint_states",
                 "mocap_neck_frame": "noitom/Neck",
                 "mocap_head_frame": "noitom/Head",
                 "robot_base_frame": "chest_link",
                 "robot_tip_frame": "neck_pitch_link",
-                "publish_rate": 50.0,
+                "publish_rate": ParameterValue(
+                    LaunchConfiguration("head_ik_rate"), value_type=float
+                ),
                 "tf_timeout_sec": 0.05,
                 "command_smoothing_alpha": 0.35,
                 "auto_calibrate": True,
@@ -261,6 +366,7 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_node)
     ld.add_action(adam_retarget_node)
     ld.add_action(primeu_joint_remap_node)
+    ld.add_action(mocap_visual_joint_republisher_node)
     ld.add_action(primeu_controller_bridge_node)
     ld.add_action(waist_retarget_bridge_node)
     ld.add_action(head_pinocchio_ik_node)
